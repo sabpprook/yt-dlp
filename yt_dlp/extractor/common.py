@@ -1103,7 +1103,8 @@ class InfoExtractor:
 
     def get_param(self, name, default=None, *args, **kwargs):
         if self._downloader:
-            return self._downloader.params.get(name, default, *args, **kwargs)
+            params = traverse_obj(self._downloader.params, ('override_args', self.IE_NAME), None)
+            return params.get(name, default, *args, **kwargs)
         return default
 
     def report_drm(self, video_id, partial=False):
