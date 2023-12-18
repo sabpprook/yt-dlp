@@ -44,6 +44,7 @@ class BidiClass(enum.IntEnum):
 
 class DirStatus(enum.IntEnum):
     Depth = 0b00_0111_1111
+    Ignore = 0b00_1000_0000
 
     NoIsolate = 0b00_0000_0000
     Isolate = 0b00_1000_0000
@@ -74,24 +75,28 @@ def bidi(data: str, debug=False):
             if char.isupper():
                 bidi_classes[index] = BidiClass.R
 
-    buffer = list(data)
-    _do_bidi(buffer, bidi_classes)
-    return "".join(buffer)
+    if __debug__:
+        print(list(bidi_classes))
+
+    return "".join(map(data.__getitem__, _do_bidi(bidi_classes)))
 
 
-def _do_bidi(data: list[str], bidi_classes: memoryview):
+def _do_bidi(bidi_classes: memoryview):
+    indices = list(range(len(bidi_classes)))
     paragraph_slices = separate_paragraphs(bidi_classes)
 
     for paragraph_slice in paragraph_slices:
         paragraph = bidi_classes[paragraph_slice]
         paragraph_level = _first_strong_character(paragraph)
-        line = ', '.join(f"{str(BidiClass(value)):>3}" for value in paragraph)
-        print(f"{paragraph_level}: {line}")
+        if __debug__:
+            line = ', '.join(f"{str(BidiClass(value)):>3}" for value in paragraph)
+            print(f"{paragraph_level}: {line}")
 
-        # X1 through X9
+        # X1 through X8
         explicit_levels = calculate_explicit_levels(paragraph, paragraph_level)
-        levels = ', '.join(f"{level:>3}" for level in explicit_levels)
-        print(f"   {levels}")
+        if __debug__:
+            levels = ', '.join(f"{level:>3}" for level in explicit_levels)
+            print(f"   {levels}")
         # TODO: X10
 
         # TODO: W1, W2, W3, W4, W5, W6, W7
@@ -101,11 +106,14 @@ def _do_bidi(data: list[str], bidi_classes: memoryview):
         resolve_implicit_levels(paragraph, explicit_levels)
         # TODO: L1
 
-        level_runs = [(1, 0, 0)]
+        # X10
+
+        # L2
         while True:
-            levels = ', '.join(f"{level:>3}" for level in explicit_levels)
-            print(f"   {levels}")
-            print("   " + repr(''.join(data)))
+            if __debug__:
+                levels = ', '.join(f"{level:>3}" for level in explicit_levels)
+                print(f"   {levels}")
+                print("   " + repr("".join(map(data.__getitem__, indices))))
 
             level_runs = list(yield_level_runs(paragraph, explicit_levels))
             max_level = max(level for level, _, _ in level_runs)
@@ -117,14 +125,40 @@ def _do_bidi(data: list[str], bidi_classes: memoryview):
                 if level != max_level:
                     continue
 
-                source = slice(stop + offset - 1, start + offset - 1, -1)
-                target = slice(start + offset, stop + offset)
-                data[target] = data[source]
+                part_slice = slice(start + offset, stop + offset)
+                indices[part_slice] = reversed(indices[part_slice])
+
                 for index in range(start, stop):
                     explicit_levels[index] -= 1
-        # TODO: L2, L3
+        # TODO: L3, L4
+        if __debug__:
+            print()
 
-        print()
+    return indices
+
+
+def apply_(indices: list[int], levels: memoryview):
+    while True:
+        if __debug__:
+            levels = ', '.join(f"{level:>3}" for level in explicit_levels)
+            print(f"   {levels}")
+            print("   " + repr("".join(map(data.__getitem__, indices))))
+
+        level_runs = list(yield_level_runs(paragraph, explicit_levels))
+        max_level = max(level & DirStatus.Depth for level, _, _ in level_runs)
+        if not max_level:
+            break
+
+        offset = paragraph_slice.start
+        for level, start, stop in level_runs:
+            if level != max_level:
+                continue
+
+            part_slice = slice(start + offset, stop + offset)
+            indices[part_slice] = reversed(indices[part_slice])
+
+            for index in range(start, stop):
+                levels[index] -= 1
 
 
 def yield_level_runs(bidi_classes: memoryview, embedding_levels: memoryview, *, offset: int = 0):
@@ -301,7 +335,8 @@ def calculate_explicit_levels(bidi_classes: memoryview, paragraph_level: int):
         # XXX: What is this suppose to do??
 
         # X9
-        # We will ignore RLE, LRE, RLO, LRO, PDF, and BN later in the process
+        if bidi_class not in _X9_excludes:
+            embedding_levels[index] |= DirStatus.Ignore
 
     return embedding_levels
 
@@ -315,24 +350,29 @@ def _next_even(dir_status: int):
 
 
 if __name__=="__main__":
-    arabic = "\N{Arabic Letter Alef} \N{Arabic Letter Khah}"
-    hebrew = "\N{Hebrew Letter Pe} \N{Hebrew Letter Nun}"
-    data = "\n".join([
-        "",
-        "This is a\N{ACUTE ACCENT} test",
-        arabic,
-        f"\N{LRI}{arabic}\N{PDI}lol",
-        f"\N{LRI}lol\N{PDI}{arabic}",
-        f"\N{LRI}lol{arabic}",
-        f"\N{LRI}lol\N{PDI}lol",
-        f"this {arabic} work",
-        f"this {hebrew} work",
-    ])
+    import timeit
+    from functools import partial
+
+    # arabic = "\N{Arabic Letter Alef} \N{Arabic Letter Khah}"
+    # hebrew = "\N{Hebrew Letter Pe} \N{Hebrew Letter Nun}"
+    # data = "\n".join([
+    #     "",
+    #     "This is a\N{ACUTE ACCENT} test",
+    #     arabic,
+    #     f"\N{LRI}{arabic}\N{PDI}lol",
+    #     f"\N{LRI}lol\N{PDI}{arabic}",
+    #     f"\N{LRI}lol{arabic}",
+    #     f"\N{LRI}lol\N{PDI}lol",
+    #     f"this {arabic} work",
+    #     f"this {hebrew} work",
+    # ])
     debug_trans = str.maketrans("><=", "\N{LRI}\N{RLI}\N{PDI}")
     debug_rev_trans = str.maketrans("\N{LRI}\N{RLI}\N{PDI}", "><=")
 
     data = "he said “<car MEANS CAR=.” “<IT DOES=”, she agreed."
 
     print(repr(data))
-    result = bidi(data.translate(debug_trans))
-    print(repr(result.translate(debug_rev_trans)))
+    res = data.translate(debug_trans)
+    result = timeit.timeit(partial(bidi, res, True), number=10_000)
+    print(repr(bidi(res, True).translate(debug_rev_trans)))
+    print(result)
