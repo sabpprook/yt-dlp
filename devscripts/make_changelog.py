@@ -291,7 +291,8 @@ class CommitRange:
             for line in iter(lambda: next(lines), self.COMMIT_SEPARATOR):
                 match = self.AUTHOR_INDICATOR_RE.match(line)
                 if match:
-                    authors = sorted(map(str.strip, line[match.end():].split(',')), key=str.casefold)
+                    authors = map(str.lstrip, line[match.end():].split(','))
+                    authors = sorted((author.partition(' ')[0] for author in authors), key=str.casefold)
 
             commit = Commit(commit_hash, short, authors)
             if skip and (self._start or not i):
@@ -325,7 +326,8 @@ class CommitRange:
                 hashes = ', '.join(commit.hash[:HASH_LENGTH] for commit in fix_commits)
                 logger.info(f'Found fix(es) for {commitish[:HASH_LENGTH]}: {hashes}')
                 for fix_commit in fix_commits:
-                    del commits[fix_commit.hash]
+                    if not commits.pop(fix_commit.hash, None):
+                        logger.warning(f'Could not find commit {fix_commit.hash}')
             else:
                 logger.debug(f'Commit with fixes not in changes: {commitish[:HASH_LENGTH]}')
 
@@ -426,21 +428,21 @@ class CommitRange:
         return group, details, sub_details
 
 
-def get_new_contributors(contributors_path, commits):
+def get_contributors(commits, contributors_path=None):
     contributors = set()
-    if contributors_path.exists():
+    if contributors_path and contributors_path.exists():
         for line in read_file(contributors_path).splitlines():
             author, _, _ = line.strip().partition(' (')
             authors = author.split('/')
             contributors.update(map(str.casefold, authors))
 
-    new_contributors = set()
+    new_contributors = []
     for commit in commits:
         for author in commit.authors:
             author_folded = author.casefold()
             if author_folded not in contributors:
                 contributors.add(author_folded)
-                new_contributors.add(author)
+                new_contributors.append(author)
 
     return sorted(new_contributors, key=str.casefold)
 
@@ -494,7 +496,7 @@ if __name__ == '__main__':
 
     logger.info(f'Loaded {len(commits)} commits')
 
-    new_contributors = get_new_contributors(args.contributors_path, commits)
+    new_contributors = get_contributors(commits, args.contributors_path)
     if new_contributors:
         if args.contributors:
             write_file(args.contributors_path, '\n'.join(new_contributors) + '\n', mode='a')
