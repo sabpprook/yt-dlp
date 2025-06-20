@@ -1,4 +1,13 @@
 services:
+  nuitka:
+    build: nuitka
+    environment:
+      channel: ${channel}
+      origin: ${origin}
+      version: ${version}
+    volumes:
+      - ~/build:/build
+      - ../..:/yt-dlp
   static:
     build: static
     environment:
@@ -8,3 +17,4 @@ services:
     volumes:
       - ~/build:/build
       - ../..:/yt-dlp
+
